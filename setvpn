@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+#
+set -e
+
+: "${DIALOG:=whiptail}"
+: "${DIALOG_OK=0}"
+: "${DIALOG_CANCEL=1}"
+: "${DIALOG_HELP=2}"
+: "${DIALOG_EXTRA=3}"
+: "${DIALOG_ITEM_HELP=4}"
+: "${DIALOG_ESC=255}"
+
+# $1: conf
+connect() {
+  echo "Connecting to $1..."
+  sudo systemctl start openvpn-client@$1
+}
+
+disconnect() {
+  echo "Disconnecting to $1..."
+  sudo systemctl stop openvpn-client@$1
+}
+
+status() {
+  sudo systemctl status openvpn-client@$1
+}
+
+log() {
+  echo "Print $1's log..."
+  journalctl -f -n 100 -u openvpn-client@$1
+}
+
+getconf() {
+  raw_conf=$(ls /etc/openvpn/client/*.conf 2>/dev/null || true)
+  configs=()
+  actives=()
+  for conf in $raw_conf
+  do
+    local bname=$(basename $conf)
+    local name=${bname%%.*}
+    configs+=($name)
+    actives+=($(systemctl is-active openvpn-client@$name || true))
+  done
+}
+
+getconf
+
+i=0
+for conf in ${configs[@]}
+do
+  i=$((i+1))
+  args+="$(printf '%s %s(%s) ' "${i}" "${conf}" "${actives[$(( i - 1))]}" )"
+done
+
+echo $args
+
+
+if [[ ${#configs[@]} -eq 0 ]]; then
+  >&2 echo "No *.conf file found in /etc/openvpn/client"
+  exit 1
+elif [[ ${#configs[@]} -eq 1 ]]; then
+  index=1
+else
+  exec 3>&1
+  index=$($DIALOG \
+         --menu "Choose from your available configurations:" 0 0 0 $args \
+         2>&1 1>&3 )
+  exec 3>&-
+fi
+
+selected=${configs[$(( $index - 1 ))]}
+selected_active=${actives[$(( $index - 1 ))]}
+
+exec 3>&1
+result=$($DIALOG \
+       --menu "Actions ($selected_active now) " 0 0 0 \
+       'Connect' '' 'Disconnect' '' 'Log' '' 'Status' ''\
+       2>&1 1>&3 )
+exec 3>&-
+
+# echo $index $selected $result
+
+case "$result" in
+  "Connect")
+    connect $selected
+    ;;
+  "Log") 
+    log $selected
+    ;;
+  "Disconnect")
+    disconnect $selected
+    ;;
+  "Status")
+    status $selected
+    ;;
+esac
