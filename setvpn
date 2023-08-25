@@ -52,7 +52,7 @@ do
   args+="$(printf '%s %s(%s) ' "${i}" "${conf}" "${actives[$(( i - 1))]}" )"
 done
 
-echo $args
+# echo $args
 
 
 if [[ ${#configs[@]} -eq 0 ]]; then
